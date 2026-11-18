@@ -21,12 +21,23 @@ export async function getOrCreateDemoTenant(): Promise<{ id: string; siteKey: st
     .where(eq(tenants.siteKey, siteKey));
   if (existing) return existing;
 
+  // Concurrent first requests can all reach this point — only one insert
+  // wins; the others fall through to re-reading the row it created.
   const [created] = await db
     .insert(tenants)
     .values({ name: "Demo", siteKey, secretKey: generateSecretKey() })
+    .onConflictDoNothing({ target: tenants.siteKey })
     .returning({ id: tenants.id, siteKey: tenants.siteKey });
 
-  await db.insert(rateLimitConfig).values({ tenantId: created.id });
+  if (!created) {
+    const [winner] = await db
+      .select({ id: tenants.id, siteKey: tenants.siteKey })
+      .from(tenants)
+      .where(eq(tenants.siteKey, siteKey));
+    return winner;
+  }
+
+  await db.insert(rateLimitConfig).values({ tenantId: created.id }).onConflictDoNothing();
 
   return created;
 }
