@@ -75,7 +75,7 @@ export default async function Home() {
           clarification instead of making things up.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Button render={<Link href="/login" />} nativeButton={false} size="lg">
+          <Button render={<Link href="/signup" />} nativeButton={false} size="lg">
             Get started
           </Button>
           <span className="text-sm text-muted-foreground">

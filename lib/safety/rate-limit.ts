@@ -56,17 +56,20 @@ export async function checkDemoQuestionCap(
 
 export type TenantRateLimitResult =
   | { ok: true }
-  | { ok: false; window: "minute" | "day" };
+  | { ok: false; window: "minute" | "hour" | "day" };
 
 /**
  * Token-bucket rate limit per tenant, using the tenant's configured
- * requests-per-minute / requests-per-day (rate_limit_config table).
+ * requests-per-minute / -hour / -day (rate_limit_config table). Pass
+ * requestsPerHour: null to skip the hourly cap (the demo tenant, which has
+ * its own per-IP trial cap instead).
  * Ratelimit instances are cheap to construct (no I/O), so building one per
  * call lets the bucket size vary per tenant/plan.
  */
 export async function checkTenantRateLimit(params: {
   tenantId: string;
   requestsPerMinute: number;
+  requestsPerHour: number | null;
   requestsPerDay: number;
 }): Promise<TenantRateLimitResult> {
   const minuteLimiter = new Ratelimit({
@@ -74,18 +77,28 @@ export async function checkTenantRateLimit(params: {
     limiter: Ratelimit.tokenBucket(params.requestsPerMinute, "1 m", params.requestsPerMinute),
     prefix: "ratelimit:tenant:minute",
   });
+  const hourLimiter =
+    params.requestsPerHour === null
+      ? null
+      : new Ratelimit({
+          redis,
+          limiter: Ratelimit.fixedWindow(params.requestsPerHour, "1 h"),
+          prefix: "ratelimit:tenant:hour",
+        });
   const dayLimiter = new Ratelimit({
     redis,
     limiter: Ratelimit.fixedWindow(params.requestsPerDay, "1 d"),
     prefix: "ratelimit:tenant:day",
   });
 
-  const [minuteResult, dayResult] = await Promise.all([
+  const [minuteResult, hourResult, dayResult] = await Promise.all([
     minuteLimiter.limit(params.tenantId),
+    hourLimiter?.limit(params.tenantId),
     dayLimiter.limit(params.tenantId),
   ]);
 
   if (!minuteResult.success) return { ok: false, window: "minute" };
+  if (hourResult && !hourResult.success) return { ok: false, window: "hour" };
   if (!dayResult.success) return { ok: false, window: "day" };
   return { ok: true };
 }

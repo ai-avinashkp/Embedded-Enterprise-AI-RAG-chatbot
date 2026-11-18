@@ -58,14 +58,19 @@ export async function POST(request: Request) {
           {
             type: "rejected",
             message:
-              "You've used all 5 free demo questions for now. Sign up to chat with your own documents, no limit.",
+              "You've used all 5 free demo questions for now. Sign up to chat with your own documents.",
           },
           { status: 429 }
         );
       }
     }
 
-    const safety = await runSafetyChecks({ tenantId: tenant.id, ip, query: trimmedQuery });
+    const safety = await runSafetyChecks({
+      tenantId: tenant.id,
+      ip,
+      query: trimmedQuery,
+      isDemoTenant,
+    });
     if (!safety.allowed) {
       return NextResponse.json(
         { type: "rejected", message: safety.message },

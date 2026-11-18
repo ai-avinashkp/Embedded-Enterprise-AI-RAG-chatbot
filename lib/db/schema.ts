@@ -53,6 +53,12 @@ export const tenants = pgTable("tenants", {
   siteKey: text("site_key").notNull().unique(),
   secretKey: text("secret_key").notNull().unique(),
   plan: text("plan").notNull().default("free"),
+  // Start of the tenant's current 24h document session — once it's older
+  // than that, the tenant's documents are cleared and must be re-ingested
+  // (see lib/documents.ts expireStaleSession).
+  sessionStartedAt: timestamp("session_started_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -71,6 +77,9 @@ export const users = pgTable(
     email: text("email").notNull().unique(),
     emailVerified: timestamp("email_verified", { mode: "date" }),
     image: text("image"),
+    // scrypt hash (see lib/password.ts). Null for the env-based admin
+    // account, which signs in with ADMIN_LOGIN_ID instead.
+    passwordHash: text("password_hash"),
     role: userRoleEnum("role").notNull().default("member"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -230,5 +239,17 @@ export const rateLimitConfig = pgTable("rate_limit_config", {
     .primaryKey()
     .references(() => tenants.id, { onDelete: "cascade" }),
   requestsPerMinute: integer("requests_per_minute").notNull().default(20),
+  requestsPerHour: integer("requests_per_hour").notNull().default(10),
   requestsPerDay: integer("requests_per_day").notNull().default(1000),
+});
+
+// Single-row table (id = "global") of platform-wide switches the admin can
+// flip from the dashboard without a redeploy.
+export const platformSettings = pgTable("platform_settings", {
+  id: text("id").primaryKey().default("global"),
+  // ON: an upload clears every *other* tenant's documents (the demo tenant
+  // is always kept). OFF: an upload clears the uploader's own older docs.
+  clearOtherTenantsOnUpload: boolean("clear_other_tenants_on_upload")
+    .notNull()
+    .default(false),
 });

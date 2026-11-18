@@ -6,6 +6,7 @@ import { storeBlob } from "@/lib/blob";
 import { db } from "@/lib/db";
 import { documents, docTypeEnum, tenants } from "@/lib/db/schema";
 import { getOrCreateDemoTenant, isValidAdminToken } from "@/lib/demo";
+import { clearDocumentsAfterUpload, expireStaleSession } from "@/lib/documents";
 import { ingestDocument } from "@/lib/rag/ingest";
 import { getPdfPageLimit } from "@/lib/rag/limits";
 import { getPdfPageCount, isSupportedMimeType, type PageRange } from "@/lib/rag/parse";
@@ -52,6 +53,8 @@ async function handlePost(request: Request): Promise<Response> {
   if (!tenantId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  await expireStaleSession(tenantId);
 
   const file = formData.get("file");
   const docType = formData.get("docType");
@@ -190,6 +193,8 @@ async function handlePost(request: Request): Promise<Response> {
       { status: 200 }
     );
   }
+
+  await clearDocumentsAfterUpload({ tenantId, keepDocumentId: documentId });
 
   return NextResponse.json({ documentId, status: "ready" });
 }

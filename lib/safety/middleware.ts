@@ -7,6 +7,7 @@ import { checkIpRateLimit, checkTenantRateLimit } from "./rate-limit";
 import { moderateText } from "./moderation";
 
 const DEFAULT_REQUESTS_PER_MINUTE = 20;
+const DEFAULT_REQUESTS_PER_HOUR = 10;
 const DEFAULT_REQUESTS_PER_DAY = 1000;
 
 export type SafetyCheckResult =
@@ -23,8 +24,10 @@ export async function runSafetyChecks(params: {
   tenantId: string;
   ip: string;
   query: string;
+  /** Demo tenant: skip the hourly tenant cap (it has a per-IP trial cap). */
+  isDemoTenant?: boolean;
 }): Promise<SafetyCheckResult> {
-  const { tenantId, ip, query } = params;
+  const { tenantId, ip, query, isDemoTenant = false } = params;
 
   const ipOk = await checkIpRateLimit(ip);
   if (!ipOk) {
@@ -44,6 +47,9 @@ export async function runSafetyChecks(params: {
   const tenantResult = await checkTenantRateLimit({
     tenantId,
     requestsPerMinute: config?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE,
+    requestsPerHour: isDemoTenant
+      ? null
+      : (config?.requestsPerHour ?? DEFAULT_REQUESTS_PER_HOUR),
     requestsPerDay: config?.requestsPerDay ?? DEFAULT_REQUESTS_PER_DAY,
   });
   if (!tenantResult.ok) {
@@ -51,10 +57,7 @@ export async function runSafetyChecks(params: {
     return {
       allowed: false,
       reason: "rate_limited",
-      message:
-        tenantResult.window === "day"
-          ? "This chatbot has reached its daily usage limit — please try again tomorrow."
-          : "This chatbot is receiving too many requests right now — please try again in a minute.",
+      message: RATE_LIMIT_MESSAGES[tenantResult.window],
     };
   }
 
@@ -70,6 +73,12 @@ export async function runSafetyChecks(params: {
 
   return { allowed: true };
 }
+
+const RATE_LIMIT_MESSAGES = {
+  minute: "This chatbot is receiving too many requests right now — please try again in a minute.",
+  hour: "This chatbot has reached its hourly question limit — please try again in an hour.",
+  day: "This chatbot has reached its daily usage limit — please try again tomorrow.",
+} as const;
 
 async function logRejection(
   tenantId: string,
